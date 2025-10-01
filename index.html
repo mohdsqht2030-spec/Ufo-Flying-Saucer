@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>الصحن الطائر على حدود المملكة</title>
+  <!-- Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .panel {
+      position: absolute; inset-inline: 12px; top: 12px; z-index: 1000;
+      background: #ffffffee; backdrop-filter: blur(4px);
+      border: 1px solid #e5e7eb; box-shadow: 0 8px 24px rgba(0,0,0,.08);
+      padding: 10px 12px; border-radius: 14px; font-family: system-ui, sans-serif; font-size: 14px;
+    }
+    .panel h3 { margin: 0 0 8px; font-size: 16px; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .row + .row { margin-top: 8px; }
+    button {
+      border: 1px solid #d1d5db; background: #fff; padding: 6px 10px; border-radius: 10px; cursor: pointer;
+    }
+    button:active { transform: translateY(1px); }
+    input[type="range"] { width: 160px; }
+    label { display: inline-flex; align-items: center; gap: 6px; }
+    .legend { position: absolute; bottom: 12px; inset-inline: 12px; z-index: 1000; background: #ffffffd9; padding: 8px 10px; border-radius: 10px; border: 1px solid #e5e7eb; }
+
+    /* أيقونة الصحن الطائر */
+    .ufo {
+      font-size: 20px; line-height: 1; transform: translate(-50%, -50%);
+      animation: float 1.8s ease-in-out infinite;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,.35));
+    }
+    @keyframes float {
+      0%, 100% { transform: translate(-50%, -52%); }
+      50% { transform: translate(-50%, -48%); }
+    }
+    .beam {
+      position: absolute; left: -8px; top: 12px; width: 32px; height: 32px; background: radial-gradient(closest-side, rgba(255,255,0,.35), rgba(255,255,0,0));
+      animation: pulse 1.6s ease-in-out infinite; pointer-events: none;
+    }
+    @keyframes pulse {
+      0%,100%{ opacity:.2; transform: scale(.8); }
+      50%{ opacity:.65; transform: scale(1.05); }
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="panel">
+    <h3>🎯 مسار الصحن الطائر على حدود المملكة</h3>
+    <div class="row">
+      <button id="btnStart">تشغيل</button>
+      <button id="btnPause">إيقاف مؤقت</button>
+      <button id="btnReset">إعادة</button>
+    </div>
+    <div class="row">
+      <label>السرعة (كم/ساعة)
+        <input id="speed" type="range" min="20" max="1200" value="220" step="10" />
+        <span id="speedVal">220</span>
+      </label>
+      <label><input id="chkFollow" type="checkbox" checked /> تتبّع الصحن</label>
+      <label><input id="chkPath" type="checkbox" checked /> إظهار المسار</label>
+    </div>
+  </div>
+
+  <div class="legend">ملاحظة: المسار مُبسّط (تقريبي) ويتبع الحدود البرية مع السواحل (حدود بحرية) على البحر الأحمر والخليج العربي لعرض الفكرة بشكل خفيف.</div>
+
+  <script>
+    // 1) تهيئة الخريطة
+    const map = L.map('map', { zoomControl: true }).setView([23.9, 45.1], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 10,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    // 2) إحداثيات مسار حدود المملكة (بر + بحر) — نسخة مبسطة وخفيفة الوزن
+    // ملاحظة: هذه ليست دقيقة جغرافيًا 100% لكنها مناسبة للعرض والتجربة.
+    const ksaBorder = [
+      // الشمال الغربي (خليج العقبة) نزولاً على ساحل البحر الأحمر حتى اليمن
+      [29.300, 34.950], [28.700, 35.000], [28.000, 35.150], [27.500, 35.300], [26.800, 35.400],
+      [26.200, 35.500], [25.600, 36.000], [24.900, 36.700], [24.300, 37.200], [23.600, 37.600],
+      [22.900, 38.000], [22.300, 38.400], [21.800, 39.000], [21.300, 39.300], [20.700, 39.600],
+      [20.200, 40.000], [19.600, 40.400], [18.900, 40.700], [18.300, 41.100], [17.800, 41.500],
+      [17.300, 41.900], [16.900, 42.300], [16.600, 42.600], [16.370, 42.800],
+      // حدود اليمن شرقًا باتجاه الربع الخالي ثم عمان
+      [17.000, 45.000], [17.500, 47.000], [18.200, 49.000], [18.500, 50.000], [19.000, 51.000],
+      [19.800, 52.000], [20.200, 52.500], [20.800, 53.000], [21.200, 53.400], [21.500, 53.700],
+      // حدود الإمارات/عُمان حتى الخليج العربي
+      [22.000, 53.900], [22.500, 54.000], [23.000, 54.000], [24.000, 54.000], [24.600, 54.100],
+      // الساحل الخليجي صعودًا (حدود بحرية)
+      [25.000, 53.900], [25.400, 53.400], [26.000, 52.800], [26.400, 50.500], [26.700, 50.300],
+      [27.000, 49.900], [27.400, 49.600], [27.900, 49.300], [28.400, 48.900], [28.800, 48.600],
+      [29.050, 48.400], // قرب الكويت
+      // حدود العراق/الأردن عودةً للشمال الغربي لإغلاق الحلقة
+      [29.500, 46.600], [29.700, 45.000], [30.000, 43.600], [31.000, 41.900], [31.200, 39.000],
+      [30.600, 37.000], [30.000, 36.000], [29.700, 35.500], [29.300, 34.950]
+    ];
+
+    // 3) رسم المسار
+    const path = L.polyline(ksaBorder, { color: '#1d4ed8', weight: 3, opacity: 0.85 });
+    path.addTo(map);
+    map.fitBounds(path.getBounds().pad(0.2));
+
+    // 4) أيقونة الصحن
+    const ufoIcon = L.divIcon({
+      className: '',
+      html: '<div class="ufo">🛸<div class="beam"></div></div>',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    // 5) متغيرات الحركة
+    const pts = ksaBorder.map(p => L.latLng(p[0], p[1]));
+    let segLens = [];           // أطوال المقاطع (متر)
+    let cumLens = [0];          // المسافات التراكمية (متر)
+    let totalLen = 0;           // طول المسار بالكامل
+
+    for (let i = 0; i < pts.length - 1; i++) {
+      const d = map.distance(pts[i], pts[i + 1]);
+      segLens.push(d);
+      totalLen += d;
+      cumLens.push(totalLen);
+    }
+
+    // حارس ضد المسارات القصيرة جداً
+    if (totalLen === 0 || !isFinite(totalLen)) {
+      alert('حدثت مشكلة في حساب طول المسار. تأكد من الإحداثيات.');
+    }
+
+    // 6) إنشاء العلامة (الصحن)
+    let marker = L.marker(pts[0], { icon: ufoIcon }).addTo(map);
+
+    // 7) دوال مساعدة
+    function interpOnPath(dist) {
+      // dist بالمتر من بداية المسار
+      if (!isFinite(dist) || totalLen <= 0) return null;
+      // التفاف المسافة ضمن الطول الكلي
+      let s = ((dist % totalLen) + totalLen) % totalLen;
+      // إيجاد المقطع الذي يحوي s
+      let i = 0;
+      while (i < segLens.length && cumLens[i + 1] < s) i++;
+      if (i >= segLens.length) return pts[pts.length - 1];
+      const segStart = cumLens[i];
+      const segDist = segLens[i] || 1e-6;
+      const t = (s - segStart) / segDist; // 0..1
+      const A = pts[i], B = pts[i + 1];
+      // استيفاء خطي بسيط على خطوط العرض/الطول (كافٍ لمشهد بصري)
+      const lat = A.lat + (B.lat - A.lat) * t;
+      const lng = A.lng + (B.lng - A.lng) * t;
+      return L.latLng(lat, lng);
+    }
+
+    // 8) تحكم بالحركة
+    let running = false;
+    let speedKmh = 220; // افتراضي
+    let traveled = 0;   // متر
+    let lastTs = null;
+
+    function loop(ts) {
+      if (!running) { lastTs = ts; requestAnimationFrame(loop); return; }
+      if (lastTs == null) lastTs = ts;
+      const dt = Math.max(0, ts - lastTs) / 1000; // ثواني
+      lastTs = ts;
+      const speedMps = (speedKmh * 1000) / 3600;
+      traveled += speedMps * dt;
+      const pos = interpOnPath(traveled);
+      if (pos) {
+        marker.setLatLng(pos);
+        if (chkFollow.checked) map.panTo(pos, { animate: true, duration: 0.2 });
+      }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    // 9) عناصر الواجهة
+    const btnStart = document.getElementById('btnStart');
+    const btnPause = document.getElementById('btnPause');
+    const btnReset = document.getElementById('btnReset');
+    const speed = document.getElementById('speed');
+    const speedVal = document.getElementById('speedVal');
+    const chkFollow = document.getElementById('chkFollow');
+    const chkPath = document.getElementById('chkPath');
+
+    btnStart.onclick = () => { running = true; };
+    btnPause.onclick = () => { running = false; };
+    btnReset.onclick = () => { running = false; traveled = 0; lastTs = null; marker.setLatLng(pts[0]); if (chkFollow.checked) map.panTo(pts[0]); };
+
+    speed.oninput = (e) => {
+      speedKmh = Number(e.target.value) || 220;
+      speedVal.textContent = speedKmh;
+    };
+
+    chkPath.onchange = () => {
+      if (chkPath.checked) path.addTo(map); else map.removeLayer(path);
+    };
+
+    // حماية من undefined/NaN للقيم الحرِجة
+    window.addEventListener('error', (ev) => {
+      console.warn('Runtime error:', ev.message);
+    });
+  </script>
+</body>
+</html>
